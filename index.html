@@ -7,6 +7,7 @@
     width: 100%;
     height: 360px;
     transition: margin-left 0.5s ease;
+    margin-left: -9999px;
   }
 
   #searchBar {
@@ -15,7 +16,7 @@
  
   #unmuteBtn {
     margin-top: 10px;
-    display: none;
+    display: ;block
     position: fixed;
     bottom: 20px;
     right: 20px;
@@ -74,7 +75,7 @@
 
     function hideAndSearch() {
       const playerDiv = document.getElementById("player");
-      playerDiv.style.marginLeft = "-1000px"; // Slide out and stay hidden
+      playerDiv.style.marginLeft = "-9999px"; // Slide out and stay hidden
       searchSong(); // Trigger YouTube search
     }
 
