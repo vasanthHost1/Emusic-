@@ -5,14 +5,14 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      text-align: center;
       background: #f0f0f0;
       margin: 0;
-      padding: 0;
+      padding: 20px;
+      text-align: center;
     }
 
     h1 {
-      margin-top: 30px;
+      margin-top: 20px;
     }
 
     #searchBar {
@@ -38,7 +38,7 @@
     #player {
       width: 100%;
       height: 360px;
-      margin-left: -9999px; /* keep hidden */
+      margin-left: -9999px; /* hidden iframe */
     }
 
     #controlsWrapper {
@@ -59,12 +59,6 @@
       cursor: pointer;
     }
 
-    #songTitle {
-      margin-top: 15px;
-      font-weight: bold;
-      font-size: 18px;
-    }
-
     #volumeControl label {
       font-weight: bold;
     }
@@ -73,33 +67,23 @@
       width: 200px;
     }
 
-    #videoThumbnail {
-      max-width: 100%;
-      border-radius: 10px;
-      margin-top: 10px;
-      display: none;
+    #songTitle {
+      margin-top: 15px;
+      font-weight: bold;
+      font-size: 18px;
     }
 
-    #timeDisplay {
+    #thumbnail {
+      width: 320px;
+      height: auto;
+      margin-top: 10px;
+      border-radius: 12px;
+    }
+
+    #trackProgress {
       font-weight: bold;
       font-size: 16px;
-    }
-
-    #progressBar {
-      width: 80%;
-      height: 8px;
-      background: #ccc;
-      border-radius: 5px;
-      margin-top: 5px;
-      position: relative;
-      pointer-events: none; /* ⛔ disable clicking */
-    }
-
-    #progressFill {
-      height: 100%;
-      background: #28a745;
-      width: 0%;
-      border-radius: 5px;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -113,41 +97,42 @@
   </div>
 
   <div id="songTitle"></div>
-
-  <!-- Thumbnail -->
-  <div id="thumbnailContainer">
-    <img id="videoThumbnail" src="" alt="Song Thumbnail" />
-  </div>
-
-  <!-- Hidden YouTube player -->
+  <img id="thumbnail" src="" alt="" style="display:none;">
   <div id="player"></div>
 
-  <!-- Controls -->
   <div id="controlsWrapper">
     <button id="unmuteBtn" onclick="unmutePlayer()">▶️ Play</button>
-
-    <div id="timeDisplay">00:00 / 00:00</div>
-
-    <!-- 📊 Non-seekable Progress Bar -->
-    <div id="progressBar">
-      <div id="progressFill"></div>
-    </div>
 
     <div id="volumeControl">
       <label for="volumeSlider">🔉 Volume</label><br>
       <input type="range" id="volumeSlider" min="0" max="100" value="50" onchange="setVolume(this.value)">
     </div>
+
+    <div id="trackProgress">00:00 / 00:00</div>
   </div>
 
   <script>
     let player;
     let isFirstClick = true;
-    let currentVideoId = "";
-    const apiKey = "AIzaSyCkUWUbVYjZDNRhNJBJ-NkN8ta3ga4vY3Y";
+    let trackInterval;
+    let apiIndex = 0;
+    const apiKeys = [
+      "AIzaSyA6HuHCZSivAGvISxA4h3EglIQJgmee66k",
+      "AIzaSyCkUWUbVYjZDNRhNJBJ-NkN8ta3ga4vY3Y",
+      "AIzaSyD8TitWTpspygPuDnbilqeaLj9AG1krL48"
+    ];
 
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
+
+    function getCurrentApiKey() {
+      return apiKeys[apiIndex];
+    }
+
+    function rotateApiKey() {
+      apiIndex = (apiIndex + 1) % apiKeys.length;
+    }
 
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
@@ -167,48 +152,59 @@
 
     function onPlayerReady(event) {
       player.setVolume(50);
-      setInterval(updateTimeDisplay, 1000);
     }
 
     function hideAndSearch() {
       searchSong();
     }
 
-    function searchSong() {
-      const query = document.getElementById('searchInput').value;
-      if (!query.trim()) return;
+    function searchSong(retries = 0) {
+      const query = document.getElementById('searchInput').value.trim();
+      if (!query) return;
 
-      fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&key=${apiKey}&type=video&videoEmbeddable=true&maxResults=1`)
-        .then(res => res.json())
+      const key = getCurrentApiKey();
+      fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&key=${key}&type=video&videoEmbeddable=true&maxResults=1`)
+        .then(res => {
+          if (res.status === 403 || res.status === 400) {
+            throw new Error("API quota limit or error");
+          }
+          return res.json();
+        })
         .then(data => {
           if (data.items && data.items.length > 0) {
             const videoId = data.items[0].id.videoId;
             const title = data.items[0].snippet.title;
+            const thumb = data.items[0].snippet.thumbnails.high.url;
+
             document.getElementById('songTitle').innerText = title;
+            document.getElementById('thumbnail').src = thumb;
+            document.getElementById('thumbnail').style.display = 'block';
 
-            currentVideoId = videoId;
-            const thumbUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-            const thumbnail = document.getElementById('videoThumbnail');
-            thumbnail.src = thumbUrl;
-            thumbnail.style.display = 'block';
-
-            fetch(`https://www.googleapis.com/youtube/v3/videos?part=status&id=${videoId}&key=${apiKey}`)
-              .then(res => res.json())
-              .then(videoData => {
-                const isEmbeddable = videoData.items?.[0]?.status?.embeddable;
-                if (isEmbeddable) {
-                  playVideo(videoId);
-                } else {
-                  alert("This video cannot be played here. Try another.");
-                }
-              });
+            checkEmbeddableAndPlay(videoId, key);
           } else {
             alert("No results found!");
           }
         })
         .catch(err => {
-          console.error(err);
-          alert("Error searching YouTube.");
+          if (retries < apiKeys.length - 1) {
+            rotateApiKey();
+            searchSong(retries + 1);
+          } else {
+            alert("All API keys exhausted or failed.");
+          }
+        });
+    }
+
+    function checkEmbeddableAndPlay(videoId, key) {
+      fetch(`https://www.googleapis.com/youtube/v3/videos?part=status&id=${videoId}&key=${key}`)
+        .then(res => res.json())
+        .then(data => {
+          const isEmbeddable = data.items?.[0]?.status?.embeddable;
+          if (isEmbeddable) {
+            playVideo(videoId);
+          } else {
+            alert("This video cannot be played. Try another.");
+          }
         });
     }
 
@@ -217,6 +213,9 @@
         if (isFirstClick) isFirstClick = false;
         player.loadVideoById(videoId);
         player.mute();
+
+        clearInterval(trackInterval);
+        trackInterval = setInterval(updateTrackProgress, 1000);
       }
     }
 
@@ -228,21 +227,23 @@
       if (player) player.setVolume(val);
     }
 
+    function updateTrackProgress() {
+      if (!player || typeof player.getCurrentTime !== 'function') return;
+
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      const currentFormatted = formatTime(current);
+      const durationFormatted = formatTime(duration);
+
+      document.getElementById("trackProgress").innerText = `${currentFormatted} / ${durationFormatted}`;
+    }
+
     function formatTime(seconds) {
+      if (isNaN(seconds)) return "00:00";
       const min = Math.floor(seconds / 60);
       const sec = Math.floor(seconds % 60);
       return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-    }
-
-    function updateTimeDisplay() {
-      if (player && player.getCurrentTime && player.getDuration) {
-        const current = player.getCurrentTime();
-        const total = player.getDuration();
-        document.getElementById('timeDisplay').innerText =
-          `${formatTime(current)} / ${formatTime(total)}`;
-        const percent = (current / total) * 100;
-        document.getElementById('progressFill').style.width = percent + "%";
-      }
     }
   </script>
 
